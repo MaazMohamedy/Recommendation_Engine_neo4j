@@ -10,7 +10,7 @@ import time
 import profile
 # from neo4j.v1 import GraphDatabase
 
-graph = Graph(ip_addr = 'http://localhost:7474/browser/', username = 'neo4j', password = 'DOGOpracticeserver')
+graph = Graph(ip_addr = 'http://localhost:7474/browser/', username = 'neo4j', password = 'PracticeServer*')
 
 def createDataFrame():
 	# Loading data on the users
