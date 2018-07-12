@@ -90,11 +90,50 @@ def buildGraph():
 
 	return
 
+def buildSimilarityEdges():
+
+	watchedBoth = ("MATCH (U:USER) WHERE (U:USER)-[:Has_rated]->(:MOVIE{id:{A}}) "
+				"AND (U:USER)-[:Has_rated]->(:MOVIE{id:{B}})  RETURN U.id")
+
+	findRating = "MATCH (USER {id:{user_id}})-[r:Has_rated]->(MOVIE{id:{movie_id}}) RETURN r.rating"
+
+	# merge = "MERGE (m:Movie {id:{a}})-[s:Similarity {rating:{b}}]-(m:Movie {id:{c}})"
+	merge = "MATCH (m1:USER{id:{a}}) MATCH (m2:MOVIE{id:{c}}) MERGE (m1)-[s:Similarity {rating:{b}}]-(m2)"
+
+	m1_ratings = []
+	m2_ratings = []
+	angle_in_degrees = 0
+
+	for m1 in range(1,3):#numMovies+1):
+		for m2 in range(2, 1682+1):
+			users = graph.run(watchedBoth, {"A": m1, "B":m2}).data()#[0]['U.id']
+			for u in users:
+				m1rating = graph.evaluate(findRating, {"user_id": u['U.id'], "movie_id": m1} )
+				m1_ratings.append(m1rating)
+
+				m2rating = graph.evaluate(findRating, {"user_id": u['U.id'], "movie_id": m2} )
+				m2_ratings.append(m2rating)
+
+			v1 = np.array(m1_ratings).reshape(1,-1)
+			v2 = np.array(m2_ratings).reshape(1,-1)
+
+			# calculate cosine similarity
+			similarity = cosine_similarity(v1, v2)
+			similarity = np.clip(similarity, -1, 1)
+			angle_in_radians = math.acos(similarity)
+			angle_in_degrees = float(math.degrees(angle_in_radians))
+
+
+			graph.run(merge, {"a": m1, "b":angle_in_degrees ,"c":m2})
+
+
 
 def buildSimilarityMatrix():
 
 	#### Ideas for Optimization:
-	# if you come across a duplicate, for ex: (m1,m2) and (m2,m1) then look up this value and 
+	# DONE if you come across a duplicate, for ex: (m1,m2) and (m2,m1) then look up this value and 
+	# 
+
 
 	WatchedBoth = ("MATCH (U:USER) WHERE (U:USER)-[:Has_rated]->(:MOVIE{id:{A}}) "
 				"AND (U:USER)-[:Has_rated]->(:MOVIE{id:{B}})  RETURN U.id")
@@ -110,6 +149,8 @@ def buildSimilarityMatrix():
 	matrix = []
 
 	pr = cProfile.Profile()
+
+	# timing the queries 
 
 
 	for m1 in range(1,3):#numMovies+1):
@@ -170,20 +211,22 @@ def buildSimilarityMatrix():
 
 def main():
 
-	pr = cProfile.Profile()
-	pr.enable()
+	# pr = cProfile.Profile()
+	# pr.enable()
 
 	# Create data frames from dsv files
-	createDataFrame()
+	# createDataFrame()
 
 	# Build graph of 3 nodes (user, genre, movie) and two edges (Has_rated, Is_genre)
-	buildGraph()
+	# buildGraph()
 
 	# Build our Item-Item matrix of similarities between each item
-	buildSimilarityMatrix() 
+	# buildSimilarityMatrix() 
 
-	pr.disable()
-	pr.print_stats()
+	buildSimilarityEdges()
+
+	# pr.disable()
+	# pr.print_stats()
 
 
 if __name__ == "__main__":
