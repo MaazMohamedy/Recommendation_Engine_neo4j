@@ -45,21 +45,21 @@ def createDataFrame():
 
 
 	### Create Genre nodes, each one being identified by its id
-	# graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.id IS UNIQUE")
-	# graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.name IS UNIQUE")
+	#graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.id IS UNIQUE")
+	#graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.name IS UNIQUE")
 
-	# for g,row in genre.iterrows():
-	# 	genreName = str(row.iloc[0])
-	# 	id = row.iloc[1]
-	# 	graph.run("MERGE (g:GENRE {name:{name_}, id:{id_}}) RETURN g",name_ = genreName, id_ = str(id))
+	#for g,row in genre.iterrows():
+	#	genreName = str(row.iloc[0])
+	#	id = row.iloc[1]
+	#	graph.run("MERGE (g:GENRE {name:{name_}, id:{id_}}) RETURN g",name_ = genreName, id_ = str(id))
 
 
 	graph.run("CREATE CONSTRAINT ON (m:MOVIE) ASSERT m.id IS UNIQUE")
 
 	statement1 = "MERGE (m:MOVIE {id:{ID}, title:{TITLE}, url:{URL}}) RETURN m"
 
-	# statement2 = ("MATCH (t:GENRE{id:{D}}) "
-	#               "MATCH (a:MOVIE{id:{A}, title:{B}, url:{C}}) MERGE (a)-[r:Is_genre]->(t) RETURN r")
+	#statement2 = ("MATCH (t:GENRE{id:{D}}) "
+	#             "MATCH (a:MOVIE{id:{A}, title:{B}, url:{C}}) MERGE (a)-[r:Is_genre]->(t) RETURN r")
 
 
 	for m,row in movie.iterrows():
@@ -67,13 +67,13 @@ def createDataFrame():
 		graph.run(statement1, {"ID": row.loc['id'], "TITLE":row.loc['title'], "URL":row.loc['IMDb url']})
 
 		# is_genre : vector of size n_g, is_genre[i]=True if Movie m belongs to Genre i
-		is_genre = row.iloc[-19:]==1
-		itsGenres = genre[is_genre].axes[0].values
+		#is_genre = row.iloc[-19:]==1
+		#itsGenres = genre[is_genre].axes[0].values
 
 		# Looping over Genres g which satisfy the condition : is_genre[i]=True
-		# for g in itsGenres:
-		# 	# find node corresponding to genre g, and create relation between g and m
-		# 	graph.run(statement2, {"A": row.loc['id'], "B": row.loc['title'], "C": row.loc['IMDb url'], "D": str(g)})
+		#for g in itsGenres:
+			# find node corresponding to genre g, and create relation between g and m
+			#graph.run(statement2, {"A": row.loc['id'], "B": row.loc['title'], "C": row.loc['IMDb url'], "D": str(g)})
 
 	#ENDFOR
 
@@ -87,6 +87,7 @@ def createDataFrame():
 	 	graph.run(statement3, {"A": int(row.loc['user_id']), "C": int(row.loc['item_id']), "B": int(row.loc['rating'])})
 
 	return
+
 
 def buildSimilarityEdges():
 
@@ -123,7 +124,6 @@ def buildSimilarityEdges():
 
 
 			graph.run(merge, {"a": m1, "b":angle_in_degrees ,"c":m2})
-
 
 
 def buildSimilarityMatrix():
@@ -207,21 +207,7 @@ def buildSimilarityMatrix():
 		
 	return
 
-def main():
-
-	pr = cProfile.Profile()
-	pr.enable()
-
-	# Create data frames from dsv files
-	# createDataFrame()
-
-	# Build graph of 3 nodes (user, genre, movie) and two edges (Has_rated, Is_genre)
-	# buildGraph()
-
-	# Build our Item-Item matrix of similarities between each item
-	# buildSimilarityMatrix() 
-
-	# buildSimilarityEdges()
+def UserUserRecommendation():
 
 	cypher = """MATCH (p1:USER)-[x:Has_rated]->(m:MOVIE)<-[y:Has_rated]-(p2:USER)
 	WITH SUM(x.rating * y.rating) AS xyDotProduct,
@@ -231,15 +217,101 @@ def main():
 	MERGE (p1)-[s:SIMILARITY]-(p2)
 	SET s.similarity = xyDotProduct / (xLength * yLength)"""
 
-	# cypher = "MATCH (m:MOVIE) RETURN m"
 	graph.run(cypher)
+
+	createRecommedation = """MATCH (b:USER)-[r:Has_rated]->(m:MOVIE), (b)-[s:SIMILARITY]-(a:USER {id:1})
+	WHERE NOT((a)-[:Has_rated]->(m))
+	WITH m, s.similarity AS similarity, r.rating AS rating
+	ORDER BY m.id, similarity DESC
+	WITH m.id AS movie, COLLECT(rating)[0..3] AS ratings
+	WITH movie, REDUCE(s = 0, i IN ratings | s + i)*1.0 / LENGTH(ratings) AS reco
+	ORDER BY reco DESC
+	RETURN movie AS MOVIE, reco AS Recommendation """
+
+	graph.run(createRecommedation)
+
+
+def CalculateWeightedSlopeOneDeviation():
+	numMovies = 1682
+	
+	for m1 in range(1, numMovies+1):
+		for m2 in range(1, numMovies+1):
+			if m1 != m2:
+				if (m1%20 == 0): 
+					print(m1)
+					print(m2)
+					print()
+				calculateSingleDeviation(m1, m2)
+
+
+
+def calculateSingleDeviation(m1, m2):
+
+
+	# TODO ---------->   Calculating the initial deviation
+
+	createDeviationNodes = """MATCH (leftM:MOVIE {id:{left}}), (rightM:MOVIE {id:{right}})
+	MERGE (leftM)-[:L_DEVIATION]->(deviation:SlopeOneDeviation)<-[:R_DEVIATION]-(rightM)
+	RETURN deviation
+	"""
+	graph.run(createDeviationNodes, {"left": m1, "right": m2 } )
+
+	calculateDeviation = """
+	MATCH (leftU:USER)-[:Has_rated]->(leftM:MOVIE {id:{left} })
+
+	WITH leftU
+	MATCH (rightU:USER)-[:Has_rated]->(rightM:MOVIE {id:{right}})
+	WHERE leftU = rightU
+
+	    
+	WITH COUNT(DISTINCT leftU) as totalUsers //count how many users we have!
+	MATCH (leftM:MOVIE {id:{left}})-[:L_DEVIATION]->(d:SlopeOneDeviation)<-[:R_DEVIATION]-(rightM:MOVIE {id:{right}})
+	SET d.totalUsers = totalUsers
+
+	WITH totalUsers
+	MATCH (leftU:USER)-[r:Has_rated]->(leftM:MOVIE {id:{left}} )
+
+	WITH leftM, leftU, SUM(r.rating) AS leftTotal, totalUsers
+	MATCH (rightU:USER)-[r2:Has_rated]->(rightM:MOVIE {id:{right}} )
+	WHERE leftU = rightU
+
+	WITH leftU, (TOFLOAT((leftTotal - SUM(r2.rating)))/totalUsers) as stepDeviation //get the average deviation for each session
+
+	WITH SUM(stepDeviation) as deviation //add them all up
+	MATCH (leftM:MOVIE {id:{left}})-[:L_DEVIATION]->(d:SlopeOneDeviation)<-[:R_DEVIATION]-(rightM:MOVIE {id:{right}})
+	SET d.deviation = deviation //finally also set the actual deviation value.
+	RETURN d
+	"""	
+
+	graph.run(calculateDeviation, {"left": m1, "right": m2 } )
+
+def main():
+
+	pr = cProfile.Profile()
+	pr.enable()
+
+	# Create data frames from dsv files
+	#createDataFrame()
+
+	# Build graph of 3 nodes (user, genre, movie) and two edges (Has_rated, Is_genre)
+	# buildGraph()
+
+	# Build our Item-Item matrix of similarities between each item
+	# buildSimilarityMatrix() 
+
+	# Create similarity score between all combinations of nodes with edges
+	# buildSimilarityEdges()
+
+	# Create user user similarity and provide recommendations 
+	# UserUserRecommendation()
+
+	CalculateWeightedSlopeOneDeviation()
 
 
 	pr.disable()
 	pr.print_stats()
-	
+
+
 if __name__ == "__main__":
     main()
-
-
 
