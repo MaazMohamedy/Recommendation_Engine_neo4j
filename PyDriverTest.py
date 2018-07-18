@@ -35,9 +35,7 @@ def createDataFrame():
 	rating = pd.read_csv('ml-100k/u.data', sep='\t' ,header=None, names=rating_col)
 	n_r = rating.shape[0]
 
-	return
 
-def buildGraph():
 	tx = graph.begin()
 	### Create User nodes
 	graph.run("CREATE CONSTRAINT ON (u:USER) ASSERT u.id IS UNIQUE")
@@ -47,21 +45,21 @@ def buildGraph():
 
 
 	### Create Genre nodes, each one being identified by its id
-	graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.id IS UNIQUE")
-	graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.name IS UNIQUE")
+	# graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.id IS UNIQUE")
+	# graph.run("CREATE CONSTRAINT ON (g:GENRE) ASSERT g.name IS UNIQUE")
 
-	for g,row in genre.iterrows():
-		genreName = str(row.iloc[0])
-		id = row.iloc[1]
-		graph.run("MERGE (g:GENRE {name:{name_}, id:{id_}}) RETURN g",name_ = genreName, id_ = str(id))
+	# for g,row in genre.iterrows():
+	# 	genreName = str(row.iloc[0])
+	# 	id = row.iloc[1]
+	# 	graph.run("MERGE (g:GENRE {name:{name_}, id:{id_}}) RETURN g",name_ = genreName, id_ = str(id))
 
 
 	graph.run("CREATE CONSTRAINT ON (m:MOVIE) ASSERT m.id IS UNIQUE")
 
 	statement1 = "MERGE (m:MOVIE {id:{ID}, title:{TITLE}, url:{URL}}) RETURN m"
 
-	statement2 = ("MATCH (t:GENRE{id:{D}}) "
-	              "MATCH (a:MOVIE{id:{A}, title:{B}, url:{C}}) MERGE (a)-[r:Is_genre]->(t) RETURN r")
+	# statement2 = ("MATCH (t:GENRE{id:{D}}) "
+	#               "MATCH (a:MOVIE{id:{A}, title:{B}, url:{C}}) MERGE (a)-[r:Is_genre]->(t) RETURN r")
 
 
 	for m,row in movie.iterrows():
@@ -73,9 +71,9 @@ def buildGraph():
 		itsGenres = genre[is_genre].axes[0].values
 
 		# Looping over Genres g which satisfy the condition : is_genre[i]=True
-		for g in itsGenres:
-			# find node corresponding to genre g, and create relation between g and m
-			graph.run(statement2, {"A": row.loc['id'], "B": row.loc['title'], "C": row.loc['IMDb url'], "D": str(g)})
+		# for g in itsGenres:
+		# 	# find node corresponding to genre g, and create relation between g and m
+		# 	graph.run(statement2, {"A": row.loc['id'], "B": row.loc['title'], "C": row.loc['IMDb url'], "D": str(g)})
 
 	#ENDFOR
 
@@ -211,8 +209,8 @@ def buildSimilarityMatrix():
 
 def main():
 
-	# pr = cProfile.Profile()
-	# pr.enable()
+	pr = cProfile.Profile()
+	pr.enable()
 
 	# Create data frames from dsv files
 	# createDataFrame()
@@ -223,12 +221,25 @@ def main():
 	# Build our Item-Item matrix of similarities between each item
 	# buildSimilarityMatrix() 
 
-	buildSimilarityEdges()
+	# buildSimilarityEdges()
 
-	# pr.disable()
-	# pr.print_stats()
+	cypher = """MATCH (p1:USER)-[x:Has_rated]->(m:MOVIE)<-[y:Has_rated]-(p2:USER)
+	WITH SUM(x.rating * y.rating) AS xyDotProduct,
+	SQRT(REDUCE(xDot = 0.0, a IN COLLECT(x.rating) | xDot + a^2)) AS xLength,
+	SQRT(REDUCE(yDot = 0.0, b IN COLLECT(y.rating) | yDot + b^2)) AS yLength,
+	p1, p2
+	MERGE (p1)-[s:SIMILARITY]-(p2)
+	SET s.similarity = xyDotProduct / (xLength * yLength)"""
+
+	# cypher = "MATCH (m:MOVIE) RETURN m"
+	graph.run(cypher)
 
 
+	pr.disable()
+	pr.print_stats()
+	
 if __name__ == "__main__":
     main()
+
+
 
